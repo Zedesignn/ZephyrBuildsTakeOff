@@ -2,12 +2,20 @@ require 'sketchup.rb'
 
 module ZephyrWallTool
   TYPE_DICT = 'WallTypes'
+  DEFAULT_TYPES = [
+    { name: "默认墙体", color: "Red", thickness: 200.mm, height: 2800.mm, tag: "标准墙" }
+  ]
 
   # 获取所有类型
   def self.all_types
     model = Sketchup.active_model
     types = model.get_attribute(TYPE_DICT, 'types')
-    types.is_a?(Array) ? types : []
+    # 如果模型中没有类型数据，则使用默认类型初始化
+    if types.nil? || !types.is_a?(Array) || types.empty?
+      types = DEFAULT_TYPES
+      self.save_types(types) # 保存默认类型到模型
+    end
+    types
   end
 
   # 保存所有类型
@@ -17,58 +25,55 @@ module ZephyrWallTool
 
   # 类型管理主入口
   def self.manage_types
-    types = all_types
-    loop do
-      names = types.map { |t| t['name'] }
-      choice = UI.inputbox([
-        '输入新类型名称，或选择已有类型进行编辑/删除：\n' + names.join("\n")
-      ], [''], [''], '墙体类型管理')
-      break unless choice
-      name = choice[0].strip
-      if name.empty?
-        break
-      elsif names.include?(name)
-        idx = names.index(name)
-        type = types[idx]
-        action = UI.messagebox("编辑类型: #{name}\n厚度: #{type['thickness']}\n高度: #{type['height']}\n颜色: #{type['color']}\n标签: #{type['tag']}\n\n选择"是"编辑，"否"删除，"取消"返回。", MB_YESNOCANCEL)
-        if action == IDYES
-          # 编辑
-          vals = UI.inputbox(['名称', '厚度(m)', '高度(m)', '颜色', '标签'],
-            [type['name'], type['thickness'], type['height'], type['color'], type['tag']],
-            ['', '', '', '', ''],
-            '编辑类型')
-          if vals
-            types[idx] = {
-              'name' => vals[0],
-              'thickness' => vals[1].to_f,
-              'height' => vals[2].to_f,
-              'color' => vals[3],
-              'tag' => vals[4]
-            }
-            save_types(types)
-            UI.messagebox('类型已更新！')
-          end
-        elsif action == IDNO
-          # 删除
-          types.delete_at(idx)
-          save_types(types)
-          UI.messagebox('类型已删除！')
-        end
-      else
-        # 新增
-        vals = UI.inputbox(['厚度(m)', '高度(m)', '颜色', '标签'], [0.09, 2.4, '', ''], ['', '', '', ''], '新建类型')
-        if vals
-          types << {
-            'name' => name,
-            'thickness' => vals[0].to_f,
-            'height' => vals[1].to_f,
-            'color' => vals[2],
-            'tag' => vals[3]
-          }
-          save_types(types)
-          UI.messagebox('类型已添加！')
-        end
+    types = self.all_types
+
+    # 构建类型列表字符串用于显示
+    type_list_str = types.empty? ? "当前没有已定义的墙体类型。\n" : "现有墙体类型：\n"
+    types.each_with_index do |type, index|
+      type_list_str += "#{index + 1}. 名称: #{type[:name]}, 颜色: #{type[:color]}, 厚度: #{type[:thickness]}, 高度: #{type[:height]}, 标签: #{type[:tag]}\n"
+    end
+
+    prompts = ["操作：", "类型名称:", "颜色 (例如 Red, Blue, [R,G,B]):", "厚度 (例如 200.mm):", "高度 (例如 2800.mm):", "标签:"]
+    defaults = ["查看/添加/编辑/删除", "新墙体类型", "Gray", "200.mm", "3000.mm", "自定义墙"]
+    
+    # 简化交互，先提供添加和查看功能
+    # 后续可以使用 UI::HtmlDialog 实现更复杂的界面
+    options_list = "添加|查看|取消"
+    user_choice_prompt = UI.inputbox(["请选择操作："], [""], [options_list], "墙体类型管理")
+    return unless user_choice_prompt
+    
+    action = user_choice_prompt[0]
+
+    case action
+    when "添加"
+      input_prompts = ["类型名称:", "颜色 (例如 Red, Blue, [R,G,B]):", "厚度 (例如 200.mm):", "高度 (例如 2800.mm):", "标签:"]
+      input_defaults = ["新墙体类型", "Gray", "200.mm", "3000.mm", "自定义墙"]
+      
+      details = UI.inputbox(input_prompts, input_defaults, "添加新墙体类型")
+      return unless details # 用户取消
+
+      new_type = {
+        name: details[0],
+        color: details[1],
+        thickness: Sketchup.parse_length(details[2]) || 200.mm, 
+        height: Sketchup.parse_length(details[3]) || 3000.mm,  
+        tag: details[4]
+      }
+      types << new_type
+      self.save_types(types)
+      UI.messagebox("新类型 '#{new_type[:name]}' 已添加！\n#{type_list_str}#{types.size}. 名称: #{new_type[:name]}, ...")
+    
+    when "查看"
+      current_types_display = types.empty? ? "当前没有已定义的墙体类型。\n" : "现有墙体类型：\n"
+      types.each_with_index do |type, index|
+        current_types_display += "#{index + 1}. 名称: #{type[:name]}, 颜色: #{type[:color]}, 厚度: #{type[:thickness].to_s}, 高度: #{type[:height].to_s}, 标签: #{type[:tag]}\n"
       end
+      UI.messagebox(current_types_display)
+    else
+      return
     end
   end
-end 
+
+  # 移除了这里的 unless file_loaded?(__FILE__) 块，因为它包含了重复的菜单和工具栏注册代码
+  # UI注册现在统一由 zephyr_wall_tool_loader.rb 处理
+end

@@ -1,4 +1,16 @@
+# SketchUp plugin package
+*.rbz
+
+# macOS specific
 .DS_Store
+
+# IDE specific folders (optional, add as needed)
+# .vscode/
+# .idea/
+
+# Dependencies (if managed by bundler, for example)
+# vendor/
+# .bundle/
 node_modules/
 .env
 .env.local
@@ -10,4 +22,4 @@ yarn-debug.log*
 yarn-error.log*
 .idea/
 .vscode/
-*.log 
+*.log
