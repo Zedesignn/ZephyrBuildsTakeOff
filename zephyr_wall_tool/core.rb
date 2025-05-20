@@ -1,101 +1,73 @@
 require 'sketchup.rb'
 
 module ZephyrWallTool
-  # 墙体类型定义
-  WALL_TYPES = {
-    'GYP90' => { thickness: 0.090, name: 'GYP90' },
-    'FC75' => { thickness: 0.075, name: 'FC75' },
-    'WR64' => { thickness: 0.064, name: 'WR64' }
-  }
+  TYPE_DICT = 'WallTypes'
 
-  # 默认设置
-  DEFAULT_HEIGHT = 2.4
-
-  # 当前选择的墙体类型
-  @current_wall_type = 'GYP90'
-
-  # 创建墙体
-  def self.create_wall(start_point, end_point)
+  # 获取所有类型
+  def self.all_types
     model = Sketchup.active_model
-    model.start_operation('Create Wall', true)
-
-    # 获取当前墙体类型的厚度
-    thickness = WALL_TYPES[@current_wall_type][:thickness]
-    # 计算墙体长度
-    length = start_point.distance(end_point)
-    # 创建墙体组
-    group = model.active_entities.add_group
-    # 创建墙体面
-    points = [
-      [0, 0, 0],
-      [length, 0, 0],
-      [length, thickness, 0],
-      [0, thickness, 0]
-    ]
-    # 创建底面
-    face = group.entities.add_face(points)
-    # 拉伸墙体
-    face.pushpull(DEFAULT_HEIGHT)
-    # 设置墙体属性
-    group.set_attribute('ZephyrWall', 'type', @current_wall_type)
-    group.set_attribute('ZephyrWall', 'length', length)
-    group.set_attribute('ZephyrWall', 'height', DEFAULT_HEIGHT)
-    group.set_attribute('ZephyrWall', 'thickness', thickness)
-    # 移动墙体到正确位置
-    transformation = Geom::Transformation.new(start_point, [1, 0, 0], [0, 0, 1])
-    group.transform!(transformation)
-    model.commit_operation
+    types = model.get_attribute(TYPE_DICT, 'types')
+    types.is_a?(Array) ? types : []
   end
 
-  # 墙体类型选择对话框
-  def self.show_wall_type_dialog
-    prompts = ['选择墙体类型']
-    defaults = [@current_wall_type]
-    lists = [WALL_TYPES.keys.join('|')]
-    results = UI.inputbox(prompts, defaults, lists, '墙体类型选择')
-    if results
-      @current_wall_type = results[0]
-    end
+  # 保存所有类型
+  def self.save_types(types)
+    Sketchup.active_model.set_attribute(TYPE_DICT, 'types', types)
   end
 
-  # 创建墙体工具类
-  class WallTool
-    def initialize
-      @start_point = nil
-      @end_point = nil
-    end
-
-    def activate
-      ZephyrWallTool.show_wall_type_dialog
-    end
-
-    def deactivate(view)
-      view.invalidate
-    end
-
-    def onMouseMove(flags, x, y, view)
-      if @start_point
-        @end_point = view.inputpoint(x, y).position
-        view.invalidate
-      end
-    end
-
-    def onLButtonDown(flags, x, y, view)
-      if @start_point.nil?
-        @start_point = view.inputpoint(x, y).position
+  # 类型管理主入口
+  def self.manage_types
+    types = all_types
+    loop do
+      names = types.map { |t| t['name'] }
+      choice = UI.inputbox([
+        '输入新类型名称，或选择已有类型进行编辑/删除：\n' + names.join("\n")
+      ], [''], [''], '墙体类型管理')
+      break unless choice
+      name = choice[0].strip
+      if name.empty?
+        break
+      elsif names.include?(name)
+        idx = names.index(name)
+        type = types[idx]
+        action = UI.messagebox("编辑类型: #{name}\n厚度: #{type['thickness']}\n高度: #{type['height']}\n颜色: #{type['color']}\n标签: #{type['tag']}\n\n选择"是"编辑，"否"删除，"取消"返回。", MB_YESNOCANCEL)
+        if action == IDYES
+          # 编辑
+          vals = UI.inputbox(['名称', '厚度(m)', '高度(m)', '颜色', '标签'],
+            [type['name'], type['thickness'], type['height'], type['color'], type['tag']],
+            ['', '', '', '', ''],
+            '编辑类型')
+          if vals
+            types[idx] = {
+              'name' => vals[0],
+              'thickness' => vals[1].to_f,
+              'height' => vals[2].to_f,
+              'color' => vals[3],
+              'tag' => vals[4]
+            }
+            save_types(types)
+            UI.messagebox('类型已更新！')
+          end
+        elsif action == IDNO
+          # 删除
+          types.delete_at(idx)
+          save_types(types)
+          UI.messagebox('类型已删除！')
+        end
       else
-        @end_point = view.inputpoint(x, y).position
-        ZephyrWallTool.create_wall(@start_point, @end_point)
-        @start_point = nil
-        @end_point = nil
-      end
-      view.invalidate
-    end
-
-    def draw(view)
-      if @start_point && @end_point
-        view.set_color_from_line(@start_point, @end_point)
-        view.draw_line(@start_point, @end_point)
+        # 新增
+        vals = UI.inputbox(['厚度(m)', '高度(m)', '颜色', '标签'], [0.09, 2.4, '', ''], ['', '', '', ''], '新建类型')
+        if vals
+          types << {
+            'name' => name,
+            'thickness' => vals[0].to_f,
+            'height' => vals[1].to_f,
+            'color' => vals[2],
+            'tag' => vals[3]
+          }
+          save_types(types)
+          UI.messagebox('类型已添加！')
+        end
       end
     end
   end
